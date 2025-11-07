@@ -1,0 +1,1 @@
+# kazetomirai.github.io
