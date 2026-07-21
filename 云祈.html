@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#9CB4CC">
+<title>云祈 · 盼雨变小</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+<style>
+/* ============ 配色与基础变量 ============ */
+:root{
+  --sky-light:#D6EDF8;
+  --cloud-white:#F8FBFF;
+  --rain-gray:#9CB4CC;
+  --gold:#FFE89C;
+  --pink:#FFD8E2;
+  --ink:#46586b;
+  --ink-soft:#6b7d92;
+  /* 由 JS 动态写入：雨天 -> 晴天的插值变量 */
+  --sky-top:#54667a;
+  --sky-bottom:#7c8ea0;
+  --light-veil:rgba(255,232,156,0);   /* 暖金光层，雨停时浮现 */
+  --dark-veil:rgba(40,55,70,.28);     /* 阴沉层，雨大时压暗 */
+}
+
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  color:var(--ink);
+  background:linear-gradient(180deg,var(--sky-top) 0%,var(--sky-bottom) 100%);
+  overflow-x:hidden;
+  min-height:100dvh;
+  transition:background 1.2s ease;
+  position:relative;
+}
+/* 整页亮度/氛围层 */
+.veil{position:fixed;inset:0;pointer-events:none;z-index:2;transition:opacity 1.2s ease}
+.veil.dark{background:var(--dark-veil);opacity:1}
+.veil.light{background:linear-gradient(180deg,rgba(255,232,156,0) 0%,var(--gold) 130%);opacity:0}
+
+/* ============ 板块1：顶部天气视觉区 ============ */
+.sky{
+  position:relative;
+  width:100%;
+  min-height:70vh;
+  height:70vh;
+  overflow:hidden;
+  z-index:1;
+}
+#rainCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
+
+/* 云层：乌云(上) + 晴云(下) */
+.cloud-layer{position:absolute;inset:0;z-index:2;pointer-events:none}
+.cloud-layer.interactive{pointer-events:auto;cursor:grab;touch-action:none}
+.cloud-layer.interactive:active{cursor:grabbing}
+
+.cloud{position:absolute;will-change:transform,opacity;transition:opacity 1.2s ease,filter 1.2s ease}
+.cloud svg{display:block;width:100%;height:auto;filter:drop-shadow(0 6px 18px rgba(60,80,100,.18))}
+.cloud.dark svg path{fill:#c7d2de}
+.cloud.light svg path{fill:#F8FBFF}
+.cloud.blue svg path{fill:#eaf4ff}
+
+/* 远处微光蓝天（雨变小后透出） */
+.sky-glow{position:absolute;top:18%;left:50%;transform:translateX(-50%);width:240px;height:240px;border-radius:50%;
+  background:radial-gradient(circle,rgba(180,220,250,.55) 0%,rgba(180,220,250,0) 70%);
+  opacity:0;transition:opacity 2s ease;z-index:1;pointer-events:none}
+
+/* 阳光斜射光斑（雨停） */
+.sunbeam{position:absolute;top:-10%;right:-8%;width:60vw;height:80vh;z-index:4;pointer-events:none;opacity:0;
+  background:linear-gradient(135deg,rgba(255,232,156,.0) 40%,rgba(255,232,156,.35) 55%,rgba(255,232,156,0) 75%);
+  transform:rotate(8deg);transition:opacity 1.6s ease;mix-blend-mode:screen}
+
+/* 彩虹（5 次许愿彩蛋） */
+.rainbow{position:absolute;top:30%;left:50%;transform:translateX(-50%) scale(.6);width:min(420px,80vw);height:min(210px,40vw);
+  opacity:0;transition:opacity 1.4s ease,transform 1.4s ease;z-index:4;pointer-events:none}
+.rainbow svg{width:100%;height:100%}
+
+/* 中间漂浮文字 */
+.sky-text{position:absolute;left:0;right:0;top:42%;text-align:center;z-index:5;pointer-events:none;padding:0 24px}
+.sky-text h1{
+  font-family:"Ma Shan Zheng","Songti SC",serif;
+  font-size:clamp(22px,5.2vw,40px);
+  color:var(--cloud-white);
+  text-shadow:0 2px 16px rgba(40,60,80,.35);
+  letter-spacing:2px;
+  animation:sway 5s ease-in-out infinite;
+}
+.sky-text p{margin-top:10px;font-size:clamp(12px,2.6vw,15px);color:rgba(248,251,255,.78);
+  letter-spacing:3px;animation:sway 5s ease-in-out infinite .4s}
+@keyframes sway{0%,100%{transform:translateX(-2px) rotate(-.4deg)}50%{transform:translateX(2px) rotate(.4deg)}}
+
+/* ============ 板块2：祈福交互核心区 ============ */
+.wish{position:relative;z-index:6;display:flex;flex-direction:column;align-items:center;
+  padding:42px 20px 28px;margin-top:-30px}
+.wish-cloud{
+  position:relative;border:none;background:transparent;cursor:pointer;
+  width:clamp(190px,46vw,260px);height:clamp(190px,46vw,260px);
+  display:flex;align-items:center;justify-content:center;
+  animation:float 4.5s ease-in-out infinite;
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+.wish-cloud .cloud-body{position:absolute;inset:0;transition:transform .4s cubic-bezier(.34,1.56,.64,1),filter .4s}
+.wish-cloud .cloud-body svg{width:100%;height:100%;filter:drop-shadow(0 14px 30px rgba(80,110,140,.28))}
+.wish-cloud:hover .cloud-body{transform:scale(1.06)}
+.wish-cloud .glow{position:absolute;inset:-12%;border-radius:50%;background:radial-gradient(circle,rgba(255,232,156,.55) 0%,rgba(255,232,156,0) 65%);
+  opacity:0;transition:opacity .5s ease;pointer-events:none}
+.wish-cloud:hover .glow{opacity:1}
+.wish-cloud span{position:relative;z-index:2;font-family:"Ma Shan Zheng",serif;font-size:clamp(17px,4vw,22px);
+  color:var(--ink);text-align:center;line-height:1.5;padding:0 18px;text-shadow:0 1px 4px rgba(255,255,255,.6)}
+
+.counter{margin-top:26px;font-size:13px;letter-spacing:2px;color:var(--ink-soft)}
+.counter b{font-family:"ZCOOL KuaiLe",sans-serif;font-size:20px;color:var(--ink);margin:0 4px;
+  display:inline-block;transition:transform .3s}
+.counter.bump b{transform:scale(1.4)}
+.stored-tip{margin-top:8px;font-size:11.5px;color:var(--ink-soft);opacity:.8;letter-spacing:1px;min-height:14px}
+
+/* 爱心光点 */
+.heart{position:fixed;z-index:9;pointer-events:none;font-size:14px;animation:heartUp 1.4s ease-out forwards}
+@keyframes heartUp{0%{opacity:0;transform:translateY(0) scale(.4)}20%{opacity:1}100%{opacity:0;transform:translateY(-90px) scale(1)}}
+
+/* 整页震动 */
+.shake{animation:shake .45s ease}
+@keyframes shake{0%,100%{transform:translate(0,0)}20%{transform:translate(-3px,2px)}40%{transform:translate(3px,-2px)}
+  60%{transform:translate(-2px,-1px)}80%{transform:translate(2px,1px)}}
+
+/* ============ 板块3：底部暖心区 ============ */
+.bottom{position:relative;z-index:6;padding:8px 22px 120px;max-width:560px;margin:0 auto}
+.weather-status{text-align:center;font-family:"Ma Shan Zheng",serif;font-size:clamp(16px,4vw,20px);
+  color:var(--ink);margin-bottom:22px;letter-spacing:2px;transition:opacity .5s}
+
+.warm-card{background:linear-gradient(160deg,rgba(255,255,255,.92),rgba(248,251,255,.78));
+  border:1px solid rgba(255,255,255,.7);border-radius:22px;padding:26px 24px;
+  box-shadow:0 12px 34px rgba(70,90,110,.16);backdrop-filter:blur(6px);position:relative;overflow:hidden}
+.warm-card::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 0%,rgba(255,216,226,.4),transparent 55%);pointer-events:none}
+.warm-card .label{font-size:11px;letter-spacing:4px;color:var(--ink-soft);text-transform:uppercase;margin-bottom:12px;position:relative}
+.warm-card .phrase{font-family:"Ma Shan Zheng",serif;font-size:clamp(18px,4.4vw,23px);line-height:1.8;color:var(--ink);
+  min-height:64px;display:flex;align-items:center;justify-content:center;text-align:center;position:relative;transition:opacity .4s}
+.warm-card .refresh{margin-top:18px;background:transparent;border:1px solid rgba(150,170,190,.4);color:var(--ink-soft);
+  font-size:12px;padding:8px 18px;border-radius:30px;cursor:pointer;letter-spacing:2px;transition:all .3s;position:relative}
+.warm-card .refresh:hover{background:rgba(255,255,255,.6);color:var(--ink);border-color:var(--rain-gray)}
+.warm-card .refresh:active{transform:scale(.96)}
+
+/* 右下角伞下小人 */
+.umbrella-person{position:fixed;right:18px;bottom:18px;width:74px;height:96px;z-index:7;pointer-events:none;
+  transition:transform .6s ease}
+.umbrella-person svg{width:100%;height:100%;overflow:visible}
+.umbrella-person .body{transform-origin:50% 100%;transition:transform .8s ease}
+.umbrella-person .head{transition:transform .8s ease}
+.umbrella-person.calm .body{transform:translateY(-2px)}
+.umbrella-person.calm .head{transform:translateY(-3px) rotate(-8deg)}
+.umbrella-person.sunny .body{transform:translateY(0) rotate(-4deg)}
+.umbrella-person.sunny .head{transform:translateY(-4px) rotate(-14deg)}
+
+/* 拖云提示 */
+.drag-hint{position:fixed;left:50%;bottom:148px;transform:translateX(-50%);z-index:7;
+  font-size:11.5px;letter-spacing:2px;color:var(--cloud-white);background:rgba(70,90,110,.32);
+  padding:7px 16px;border-radius:30px;backdrop-filter:blur(4px);opacity:0;transition:opacity .6s;pointer-events:none;white-space:nowrap}
+.drag-hint.show{opacity:1}
+
+/* ============ 祈福弹窗 ============ */
+.modal-mask{position:fixed;inset:0;background:rgba(40,55,70,.32);backdrop-filter:blur(6px);z-index:20;
+  display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .4s}
+.modal-mask.show{opacity:1;pointer-events:auto}
+.modal{background:linear-gradient(165deg,#Fdfmf7,#f6f9ff);border-radius:26px;padding:34px 28px 26px;width:min(420px,92vw);
+  box-shadow:0 22px 60px rgba(50,70,90,.3);transform:translateY(20px) scale(.96);transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+  position:relative;border:1px solid rgba(255,255,255,.8);text-align:center}
+.modal-mask.show .modal{transform:translateY(0) scale(1)}
+.modal .cloud-icon{width:64px;height:40px;margin:0 auto 14px;opacity:.9}
+.modal h3{font-family:"Ma Shan Zheng",serif;font-size:22px;color:var(--ink);margin-bottom:6px;letter-spacing:1px}
+.modal .sub{font-size:13px;color:var(--ink-soft);margin-bottom:22px;line-height:1.7;letter-spacing:.5px}
+.modal textarea{width:100%;min-height:78px;resize:none;border:1.5px solid rgba(150,170,190,.35);border-radius:16px;
+  padding:14px 16px;font-size:15px;font-family:inherit;color:var(--ink);background:rgba(255,255,255,.7);
+  line-height:1.6;transition:border .3s;outline:none}
+.modal textarea:focus{border-color:var(--rain-gray);background:#fff}
+.modal textarea::placeholder{color:#aab8c8}
+.modal .btn-row{display:flex;gap:12px;margin-top:18px}
+.modal button{flex:1;padding:13px;border:none;border-radius:30px;font-size:14px;font-family:inherit;cursor:pointer;letter-spacing:2px;transition:all .3s}
+.modal .btn-skip{background:transparent;color:var(--ink-soft);border:1px solid rgba(150,170,190,.35)}
+.modal .btn-skip:hover{background:rgba(255,255,255,.5)}
+.modal .btn-send{background:linear-gradient(135deg,#b9d4e8,#9CB4CC);color:#fff;box-shadow:0 8px 20px rgba(120,150,180,.35)}
+.modal .btn-send:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(120,150,180,.45)}
+.modal .btn-send:active{transform:translateY(0)}
+
+/* 心愿光点（飘进云朵） */
+.spark{position:fixed;z-index:19;width:8px;height:8px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 12px 3px rgba(255,232,156,.8);pointer-events:none}
+
+/* ============ 收尾祝福大屏 ============ */
+.blessing{position:fixed;inset:0;z-index:30;background:linear-gradient(180deg,#BFE3F5 0%,#FFE89C 120%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;
+  opacity:0;pointer-events:none;transition:opacity 1.2s ease}
+.blessing.show{opacity:1;pointer-events:auto}
+.blessing .big{font-family:"Ma Shan Zheng",serif;font-size:clamp(28px,7vw,52px);color:#5a6b7a;line-height:1.5;
+  letter-spacing:2px;animation:rise .9s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+.blessing .copy-box{margin-top:34px;background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.9);
+  border-radius:18px;padding:18px 20px;max-width:380px;animation:rise 1.1s .3s ease both}
+.blessing .copy-text{font-size:15px;color:var(--ink);line-height:1.7;margin-bottom:14px}
+.blessing .copy-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.blessing .copy-btn{background:#fff;border:1px solid var(--rain-gray);color:var(--ink);padding:9px 18px;
+  border-radius:30px;font-size:13px;cursor:pointer;font-family:inherit;letter-spacing:1px;transition:all .3s}
+.blessing .copy-btn:hover{background:var(--rain-gray);color:#fff}
+.blessing .copy-btn.done{background:#9CB4CC;color:#fff;border-color:#9CB4CC}
+.blessing .again{margin-top:30px;background:transparent;border:none;color:var(--ink-soft);font-size:13px;
+  cursor:pointer;text-decoration:underline;letter-spacing:2px;font-family:inherit}
+.blessing .wishes-list{margin-top:18px;font-size:12px;color:var(--ink-soft);max-width:340px;line-height:1.8;
+  opacity:.85;animation:rise 1.2s .5s ease both}
+.blessing .wishes-list .w{display:block;padding:2px 0}
+
+/* 浮动祝福光斑（雨停全屏飘动） */
+.floaty{position:absolute;border-radius:50%;background:var(--gold);pointer-events:none;opacity:0}
+
+/* 启动遮罩（首次点击解锁音频） */
+.gate{position:fixed;inset:0;z-index:40;background:linear-gradient(180deg,#54667a,#7c8ea0);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  transition:opacity .8s ease;cursor:pointer;padding:30px}
+.gate.hide{opacity:0;pointer-events:none}
+.gate .g-title{font-family:"Ma Shan Zheng",serif;font-size:clamp(40px,12vw,72px);color:var(--cloud-white);
+  letter-spacing:6px;text-shadow:0 4px 20px rgba(0,0,0,.2)}
+.gate .g-sub{margin-top:14px;font-size:14px;color:rgba(248,251,255,.8);letter-spacing:4px}
+.gate .g-enter{margin-top:40px;font-size:13px;color:rgba(248,251,255,.7);letter-spacing:3px;
+  border:1px solid rgba(248,251,255,.4);padding:12px 30px;border-radius:30px;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+
+@media (max-width:600px){
+  .sky{min-height:62vh;height:62vh}
+  .umbrella-person{width:60px;height:80px;right:12px;bottom:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;transition-duration:.2s!important}
+}
+</style>
+</head>
+<body>
+
+<!-- 启动遮罩：点击进入并解锁音频 -->
+<div class="gate" id="gate">
+  <div class="g-title">云祈</div>
+  <div class="g-sub">诚心许愿 · 盼雨变小</div>
+  <div class="g-enter">轻触屏幕，开始祈福</div>
+</div>
+
+<!-- 氛围层 -->
+<div class="veil dark" id="veilDark"></div>
+<div class="veil light" id="veilLight"></div>
+
+<!-- 板块1：顶部天气视觉区 -->
+<section class="sky" id="sky">
+  <div class="sky-glow" id="skyGlow"></div>
+
+  <!-- 晴天云层（底层，雨变小透出） -->
+  <div class="cloud-layer" id="lightClouds"></div>
+
+  <!-- 远处微光蓝天 -->
+  <div class="sunbeam" id="sunbeam"></div>
+
+  <!-- 乌云层（顶层，可拖拽） -->
+  <div class="cloud-layer interactive" id="darkClouds"></div>
+
+  <!-- 彩虹 -->
+  <div class="rainbow" id="rainbow">
+    <svg viewBox="0 0 200 100" preserveAspectRatio="none">
+      <path d="M10,100 A90,90 0 0,1 190,100" fill="none" stroke="#FFD8E2" stroke-width="6" opacity=".8"/>
+      <path d="M22,100 A78,78 0 0,1 178,100" fill="none" stroke="#FFE89C" stroke-width="6" opacity=".8"/>
+      <path d="M34,100 A66,66 0 0,1 166,100" fill="none" stroke="#BFE3F5" stroke-width="6" opacity=".8"/>
+      <path d="M46,100 A54,54 0 0,1 154,100" fill="none" stroke="#C8E6C9" stroke-width="6" opacity=".8"/>
+    </svg>
+  </div>
+
+  <canvas id="rainCanvas"></canvas>
+
+  <!-- 中间漂浮文字 -->
+  <div class="sky-text">
+    <h1>诚心许愿，愿出门细雨微风，不沾衣衫</h1>
+    <p>为即将出门的你 祈求雨势放缓</p>
+  </div>
+</section>
+
+<!-- 板块2：祈福交互核心区 -->
+<section class="wish">
+  <button class="wish-cloud" id="wishBtn" aria-label="点击许愿">
+    <span class="glow"></span>
+    <span class="cloud-body" id="wishCloudBody"></span>
+    <span>点击诚心许愿<br>求雨变小</span>
+  </button>
+  <div class="counter" id="counter">今日祈福次数：<b id="count">0</b></div>
+  <div class="stored-tip" id="storedTip"></div>
+</section>
+
+<!-- 板块3：底部暖心区 -->
+<section class="bottom">
+  <div class="weather-status" id="weatherStatus">窗外大雨滂沱，快许下心愿吧</div>
+  <div class="warm-card">
+    <div class="label">CLOUD WISH · 暖心短句</div>
+    <div class="phrase" id="phrase">我和你一同盼雨变小，出门一路顺遂</div>
+    <button class="refresh" id="refreshPhrase">换一句 ⟳</button>
+  </div>
+</section>
+
+<!-- 拖云提示 -->
+<div class="drag-hint" id="dragHint">试着拖动乌云，把它拨开 ☁️</div>
+
+<!-- 右下角伞下小人 -->
+<div class="umbrella-person" id="umbrellaPerson">
+  <svg viewBox="0 0 74 96">
+    <!-- 伞 -->
+    <g class="umbrella">
+      <path d="M6,40 Q37,4 68,40 Z" fill="#9CB4CC" stroke="#6b7d92" stroke-width="1.5"/>
+      <path d="M6,40 Q20,30 37,40 Q54,30 68,40" fill="none" stroke="#6b7d92" stroke-width="1" opacity=".5"/>
+      <line x1="37" y1="40" x2="37" y2="64" stroke="#6b7d92" stroke-width="2.5"/>
+      <path d="M37,64 Q37,70 41,70" fill="none" stroke="#6b7d92" stroke-width="2.5"/>
+    </g>
+    <!-- 身体 -->
+    <g class="body">
+      <circle class="head" cx="37" cy="76" r="9" fill="#f4d6b8"/>
+      <path d="M30,84 Q37,80 44,84 L44,96 L30,96 Z" fill="#FFD8E2"/>
+    </g>
+  </svg>
+</div>
+
+<!-- 祈福弹窗 -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <svg class="cloud-icon" viewBox="0 0 64 40">
+      <path d="M18,36 Q4,36 4,24 Q4,14 16,14 Q18,4 30,4 Q44,0 48,14 Q60,14 60,26 Q60,36 48,36 Z" fill="#F8FBFF" stroke="#c7d2de" stroke-width="1.5"/>
+    </svg>
+    <h3>心愿已送达云端</h3>
+    <div class="sub">乌云正在慢慢散开…<br>若想留下专属心愿，写在这里吧</div>
+    <textarea id="wishInput" placeholder="例如：希望等下出门雨小一点" maxlength="60"></textarea>
+    <div class="btn-row">
+      <button class="btn-skip" id="btnSkip">默默许愿</button>
+      <button class="btn-send" id="btnSend">送出心愿</button>
+    </div>
+  </div>
+</div>
+
+<!-- 收尾祝福大屏 -->
+<div class="blessing" id="blessing">
+  <div class="big">心愿达成<br>出门细雨微风，一路平安 ✨</div>
+  <div class="copy-box">
+    <div class="copy-text" id="copyText">雨停啦，出门吧，一路顺风 ✨</div>
+    <div class="copy-row" id="copyRow"></div>
+  </div>
+  <div class="wishes-list" id="wishesList"></div>
+  <button class="again" id="againBtn">再为明天祈一次 →</button>
+</div>
+
+<script>
+/* =========================================================
+   云祈 · 盼雨变小 —— 主逻辑
+   状态机：intensity 1.0(大雨) -> 0(雨停)
+   每次许愿 -0.13，拖云额外 -0.05/次（封顶 0）
+   5 次许愿触发彩虹；intensity<=0.04 触发收尾祝福
+   ========================================================= */
+
+const $ = id => document.getElementById(id);
+const STORE_KEY = 'yunqi_state_v1';
+const TODAY = new Date().toDateString();
+
+/* ---------- 状态 ---------- */
+let state = loadState();
+function defaultState(){
+  return { date:TODAY, count:0, intensity:1.0, dragged:0, wishes:[], blessed:false };
+}
+function loadState(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY));
+    if(!raw) return defaultState();
+    // 跨天：重置进度，保留心愿文本（云朵永远记得）
+    if(raw.date !== TODAY){ return { ...defaultState(), wishes: raw.wishes||[] }; }
+    return { ...defaultState(), ...raw };
+  }catch(e){ return defaultState(); }
+}
+function saveState(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+
+/* ---------- 颜色插值工具 ---------- */
+function lerp(a,b,t){ return a+(b-a)*t; }
+function hex2rgb(h){ const n=parseInt(h.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }
+function rgb2css(c){ return `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`; }
+function mix(h1,h2,t){ const a=hex2rgb(h1),b=hex2rgb(h2); return [lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)]; }
+
+/* 大雨 -> 晴天 的天空色 */
+const SKY = {
+  heavy:{ top:'#4a5b6c', bottom:'#7889a0' },
+  clear:{ top:'#BFE3F5', bottom:'#FFE89C' }
+};
+
+/* ---------- DOM 云朵生成 ---------- */
+const cloudSVG = `<svg viewBox="0 0 220 110" preserveAspectRatio="none"><path d="M48,98 Q18,98 18,74 Q10,52 36,50 Q40,26 66,28 Q80,8 104,22 Q128,6 146,28 Q176,22 180,52 Q206,56 200,80 Q206,100 178,98 Z"/></svg>`;
+
+function buildClouds(container, list){
+  container.innerHTML='';
+  list.forEach(c=>{
+    const el=document.createElement('div');
+    el.className='cloud '+c.cls;
+    el.style.width=c.w+'px';
+    el.style.left=c.x+'%';
+    el.style.top=c.y+'%';
+    el.style.opacity=c.o;
+    el.style.transform=`translateY(${c.dy||0}px)`;
+    el.style.animation=`cloudDrift ${c.dur}s ease-in-out ${c.delay||0}s infinite alternate`;
+    el.innerHTML=cloudSVG;
+    container.appendChild(el);
+  });
+}
+
+// 注入云朵漂浮 keyframes
+const styleSheet=document.createElement('style');
+styleSheet.textContent=`@keyframes cloudDrift{0%{margin-left:0}100%{margin-left:24px}}`;
+document.head.appendChild(styleSheet);
+
+const darkList=[
+  {cls:'dark',w:340,x:-4,y:-2,o:.96,dur:14,delay:0},
+  {cls:'dark',w:280,x:30,y:2,o:.92,dur:18,delay:.5},
+  {cls:'dark',w:300,x:60,y:-4,o:.9,dur:16,delay:1},
+  {cls:'dark',w:240,x:78,y:4,o:.85,dur:20,delay:.2},
+];
+const lightList=[
+  {cls:'light',w:260,x:5,y:8,o:0,dur:16,delay:0},
+  {cls:'light',w:220,x:40,y:14,o:0,dur:20,delay:.6},
+  {cls:'blue',w:200,x:68,y:6,o:0,dur:18,delay:.3},
+];
+buildClouds($('darkClouds'),darkList);
+buildClouds($('lightClouds'),lightList);
+
+// 祈福按钮云朵
+$('wishCloudBody').innerHTML=`<svg viewBox="0 0 220 160"><path d="M50,140 Q14,140 14,104 Q4,72 40,70 Q44,34 78,38 Q94,8 124,26 Q152,4 172,34 Q210,30 210,72 Q236,80 222,114 Q230,150 190,140 Z" fill="#F8FBFF"/></svg>`;
+
+/* ---------- Canvas 雨滴系统 ---------- */
+const canvas=$('rainCanvas'),ctx=canvas.getContext('2d');
+let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+function resize(){
+  const r=canvas.getBoundingClientRect();
+  W=r.width;H=r.height;
+  canvas.width=W*DPR;canvas.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+
+let drops=[],splashes=[],mists=[];
+function spawnDrop(){
+  const i=state.intensity;
+  // 大雨粗密长，小雨细疏短
+  const len=lerp(6,22,Math.random()*0.5+i*0.5);
+  drops.push({
+    x:Math.random()*W,
+    y:Math.random()*-H,
+    len,
+    sp:lerp(5,14,0.4+i*0.6)+Math.random()*2,
+    op:lerp(.12,.55,i)+Math.random()*.1,
+    w:lerp(.8,1.6,i)
+  });
+}
+function spawnMist(){
+  mists.push({x:Math.random()*W,y:H-20-Math.random()*30,r:lerp(8,18,Math.random()),op:lerp(.05,.18,Math.random()),vx:(Math.random()-.5)*.3,life:1});
+}
+
+function rainLoop(){
+  ctx.clearRect(0,0,W,H);
+  const i=state.intensity;
+  const target=Math.floor(i*260);
+  // 维持雨滴数量
+  while(drops.length<target) spawnDrop();
+  while(drops.length>target) drops.pop();
+
+  // 小雨时混入薄雾
+  if(i<0.45 && Math.random()<0.3) spawnMist();
+
+  // 画雨滴
+  ctx.lineCap='round';
+  for(const d of drops){
+    d.y+=d.sp;
+    if(d.y>H){
+      // 落地：大雨水花，小雨消散
+      if(i>0.5 && Math.random()<0.5){
+        splashes.push({x:d.x,y:H-2,r:0,op:.5,maxr:lerp(3,7,Math.random())});
+      }else if(i<=0.5 && Math.random()<0.4){
+        spawnMistAt(d.x,H-6);
+      }
+      d.y=-d.len-Math.random()*40;
+      d.x=Math.random()*W;
+    }
+    ctx.strokeStyle=`rgba(200,220,235,${d.op})`;
+    ctx.lineWidth=d.w;
+    ctx.beginPath();
+    ctx.moveTo(d.x,d.y);
+    ctx.lineTo(d.x-1,d.y+d.len);
+    ctx.stroke();
+  }
+  // 水花
+  for(let s=splashes.length-1;s>=0;s--){
+    const sp=splashes[s];
+    sp.r+=0.6;sp.op-=0.04;
+    if(sp.op<=0||sp.r>sp.maxr){splashes.splice(s,1);continue;}
+    ctx.strokeStyle=`rgba(210,225,240,${sp.op})`;
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(sp.x,sp.y,sp.r,Math.PI,0);ctx.stroke();
+  }
+  // 薄雾
+  for(let m=mists.length-1;m>=0;m--){
+    const mi=mists[m];
+    mi.x+=mi.vx;mi.life-=0.012;
+    if(mi.life<=0){mists.splice(m,1);continue;}
+    ctx.fillStyle=`rgba(220,235,248,${mi.op*mi.life})`;
+    ctx.beginPath();ctx.arc(mi.x,mi.y,mi.r,0,Math.PI*2);ctx.fill();
+  }
+  requestAnimationFrame(rainLoop);
+}
+function spawnMistAt(x,y){
+  mists.push({x,y,r:lerp(6,12,Math.random()),op:lerp(.1,.2,Math.random()),vx:(Math.random()-.5)*.4,life:1});
+}
+
+/* ---------- 天空/云层/氛围 渲染 ---------- */
+function renderAtmosphere(){
+  const i=state.intensity;
+  const t=1-i; // 0=大雨,1=晴
+  // 天空渐变
+  const top=mix(SKY.heavy.top,SKY.clear.top,t);
+  const bot=mix(SKY.heavy.bottom,SKY.clear.bottom,t);
+  document.body.style.background=`linear-gradient(180deg,${rgb2css(top)} 0%,${rgb2css(bot)} 100%)`;
+  // 阴沉层透明度
+  $('veilDark').style.opacity=lerp(1,0,t);
+  // 暖金光层
+  $('veilLight').style.opacity=lerp(0,1,Math.max(0,t-0.3)/0.7);
+  // 乌云透明度变淡
+  const darkOpacity=lerp(.95,.12,t);
+  document.querySelectorAll('#darkClouds .cloud').forEach((c,idx)=>{
+    c.style.opacity=darkOpacity*(0.85+idx*0.04);
+    c.style.filter=`brightness(${lerp(1,1.25,t)})`;
+  });
+  // 晴天云层透出
+  document.querySelectorAll('#lightClouds .cloud').forEach((c,idx)=>{
+    c.style.opacity=lerp(0,.9,Math.max(0,t-0.25)/0.75)*(0.8+idx*0.07);
+  });
+  // 微光蓝天
+  $('skyGlow').style.opacity=lerp(0,1,Math.max(0,t-0.4)/0.6);
+  // 阳光斜射
+  $('sunbeam').style.opacity=lerp(0,1,Math.max(0,t-0.7)/0.3);
+}
+
+/* ---------- 天气状态文字 ---------- */
+function weatherText(){
+  const i=state.intensity;
+  if(i>0.6) return '窗外大雨滂沱，快许下心愿吧';
+  if(i>0.3) return '雨势渐缓，出门不会淋湿啦';
+  if(i>0.06) return '云层散开，温柔小雨刚刚好';
+  return '雨停了，天光温柔，正好出门';
+}
+function updateStatus(){
+  const el=$('weatherStatus');
+  el.style.opacity=0;
+  setTimeout(()=>{ el.textContent=weatherText(); el.style.opacity=1; },200);
+}
+
+/* ---------- 伞下小人状态 ---------- */
+function updateUmbrella(){
+  const p=$('umbrellaPerson'),i=state.intensity;
+  p.classList.remove('calm','sunny');
+  if(i<=0.06) p.classList.add('sunny');
+  else if(i<=0.4) p.classList.add('calm');
+}
+
+/* ---------- 暖心短句 ---------- */
+const PHRASES=[
+  '我和你一同盼雨变小，出门一路顺遂',
+  '诚心替你许愿，愿细雨温柔不扰行程',
+  '云朵收下心愿，等你出门便是好天气',
+  '愿这阵雨懂得分寸，在你出门前轻轻收住',
+  '替你向云层递了张请假条，雨该歇歇了',
+  '心愿飘进云里，雨声正一点点变温柔',
+  '别急，云在帮你拖时间，雨马上就软了',
+];
+let phraseIdx=0;
+function nextPhrase(){
+  const el=$('phrase');
+  el.style.opacity=0;
+  setTimeout(()=>{
+    phraseIdx=(phraseIdx+1+Math.floor(Math.random()*(PHRASES.length-1)))%PHRASES.length;
+    el.textContent=PHRASES[phraseIdx];
+    el.style.opacity=1;
+  },250);
+}
+$('refreshPhrase').onclick=nextPhrase;
+
+/* ---------- 彩虹 / 收尾祝福 ---------- */
+function checkEasterEggs(prevCount){
+  // 5 次许愿：半晴 + 迷你彩虹
+  if(state.count>=5 && prevCount<5){
+    $('rainbow').style.opacity=1;
+    $('rainbow').style.transform='translateX(-50%) scale(1)';
+    toast('云层裂开一道光，迷你彩虹出现了 🌈');
+  }
+  // 雨停：全屏祝福
+  if(state.intensity<=0.04 && !state.blessed){
+    state.blessed=true; saveState();
+    setTimeout(showBlessing,900);
+  }
+}
+
+const COPY_PHRASES=[
+  '雨停啦，出门吧，一路顺风 ✨',
+  '替你求来了好天气，别带伞了，轻装出门',
+  '云朵答应了，今天不会淋湿你',
+];
+function showBlessing(){
+  $('copyText').textContent=COPY_PHRASES[0];
+  const row=$('copyRow');
+  row.innerHTML='';
+  COPY_PHRASES.forEach((p,idx)=>{
+    const b=document.createElement('button');
+    b.className='copy-btn';b.textContent='复制';
+    b.onclick=async()=>{
+      try{ await navigator.clipboard.writeText(p); }catch(e){
+        const ta=document.createElement('textarea');ta.value=p;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();
+      }
+      b.textContent='已复制 ✓';b.classList.add('done');
+      setTimeout(()=>{b.textContent='复制';b.classList.remove('done');},1800);
+    };
+    // 点击不同按钮切换展示文案
+    b.onmouseenter=()=>$('copyText').textContent=p;
+    row.appendChild(b);
+  });
+  // 展示已收藏的心愿
+  const wl=$('wishesList');
+  if(state.wishes.length){
+    wl.innerHTML='<div>云朵替你记着这些心愿：</div>'+state.wishes.slice(-6).map(w=>`<span class="w">· ${escapeHtml(w)}</span>`).join('');
+  }
+  $('blessing').classList.add('show');
+  spawnFloaties();
+}
+function escapeHtml(s){ return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// 雨停全屏飘动光斑
+function spawnFloaties(){
+  const b=$('blessing');
+  b.querySelectorAll('.floaty').forEach(f=>f.remove()); // 避免重复堆积
+  for(let k=0;k<18;k++){
+    const f=document.createElement('div');
+    f.className='floaty';
+    const size=4+Math.random()*8;
+    f.style.width=f.style.height=size+'px';
+    f.style.left=Math.random()*100+'%';
+    f.style.top=Math.random()*100+'%';
+    f.style.opacity=0.4+Math.random()*0.5;
+    f.style.animation=`floatyDrift ${6+Math.random()*6}s ease-in-out ${Math.random()*3}s infinite alternate`;
+    b.appendChild(f);
+  }
+  if(!document.getElementById('floatyStyle')){
+    const s=document.createElement('style');
+    s.id='floatyStyle';
+    s.textContent=`@keyframes floatyDrift{0%{transform:translate(0,0)}100%{transform:translate(${Math.random()*40-20}px,-30px)}}`;
+    document.head.appendChild(s);
+  }
+}
+
+$('againBtn').onclick=()=>{
+  $('blessing').classList.remove('show');
+  state={ ...defaultState(), wishes:state.wishes };
+  $('rainbow').style.opacity=0;
+  $('rainbow').style.transform='translateX(-50%) scale(.6)';
+  saveState();
+  renderAtmosphere();updateStatus();updateUmbrella();updateCounter();
+  toast('新的一程，再为出门祈一次 ☁️');
+};
+
+/* ---------- 简易 toast ---------- */
+let toastTimer;
+function toast(msg){
+  let t=$('yunqiToast');
+  if(!t){
+    t=document.createElement('div');t.id='yunqiToast';
+    t.style.cssText='position:fixed;left:50%;bottom:200px;transform:translateX(-50%);z-index:25;background:rgba(70,90,110,.5);color:#fff;padding:9px 20px;border-radius:30px;font-size:13px;letter-spacing:1px;backdrop-filter:blur(6px);opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap;max-width:90vw';
+    document.body.appendChild(t);
+  }
+  t.textContent=msg;t.style.opacity=1;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.style.opacity=0,2400);
+}
+
+/* ---------- 计数器 ---------- */
+function updateCounter(){
+  $('count').textContent=state.count;
+  const c=$('counter');c.classList.add('bump');
+  setTimeout(()=>c.classList.remove('bump'),300);
+  $('storedTip').textContent=state.wishes.length?`云朵已收藏 ${state.wishes.length} 个心愿 ✨`:'';
+}
+
+/* ---------- 音频（Web Audio API 程序生成） ---------- */
+let AC=null, rainGain=null, windGain=null, audioReady=false;
+function initAudio(){
+  if(audioReady) return;
+  try{
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    // 雨声：白噪声 -> 低通
+    const bufSize=2*AC.sampleRate;
+    const buf=AC.createBuffer(1,bufSize,AC.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<bufSize;i++) data[i]=Math.random()*2-1;
+    const noise=AC.createBufferSource();noise.buffer=buf;noise.loop=true;
+    const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1800;
+    rainGain=AC.createGain();rainGain.gain.value=0.0;
+    noise.connect(lp);lp.connect(rainGain);rainGain.connect(AC.destination);
+    noise.start();
+    // 微风：噪声 -> 更低通 + 慢调制
+    const noise2=AC.createBufferSource();noise2.buffer=buf;noise2.loop=true;
+    const lp2=AC.createBiquadFilter();lp2.type='lowpass';lp2.frequency.value=500;
+    windGain=AC.createGain();windGain.gain.value=0.0;
+    noise2.connect(lp2);lp2.connect(windGain);windGain.connect(AC.destination);
+    noise2.start();
+    audioReady=true;
+  }catch(e){ /* 音频不可用，静默降级 */ }
+}
+function updateAudio(){
+  if(!audioReady) return;
+  const i=state.intensity,t=1-i;
+  const targetRain=lerp(0.02,0.14,i); // 雨大音大
+  const targetWind=lerp(0,0.06,t);    // 雨停微风起
+  rainGain.gain.setTargetAtTime(targetRain,AC.currentTime,0.6);
+  windGain.gain.setTargetAtTime(targetWind,AC.currentTime,0.6);
+}
+// 风铃：五声音阶
+function playChime(){
+  if(!audioReady) return;
+  const scale=[523.25,587.33,659.25,783.99,880.00]; // C5 D5 E5 G5 A5
+  const notes=[scale[Math.floor(Math.random()*5)],scale[Math.floor(Math.random()*5)]];
+  notes.forEach((f,idx)=>{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.value=f;
+    const t=AC.currentTime+idx*0.12;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.18,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,t+1.6);
+    o.connect(g);g.connect(AC.destination);
+    o.start(t);o.stop(t+1.7);
+  });
+}
+
+/* ---------- 许愿主流程 ---------- */
+function makeWish(){
+  initAudio();
+  const prevCount=state.count;
+  // ① 整页轻震
+  document.body.classList.add('shake');
+  setTimeout(()=>document.body.classList.remove('shake'),450);
+  // ② 风铃 + 散云沙沙
+  playChime();
+  // ③ 雨水减少一层
+  state.intensity=Math.max(0,state.intensity-0.13);
+  state.count+=1;
+  saveState();
+  // ④ 爱心光点
+  spawnHearts();
+  // ⑤ 弹窗
+  openModal();
+  // ⑥ 刷新视觉
+  renderAtmosphere();updateStatus();updateUmbrella();updateCounter();updateAudio();
+  checkEasterEggs(prevCount);
+}
+$('wishBtn').onclick=makeWish;
+
+function spawnHearts(){
+  const r=$('wishBtn').getBoundingClientRect();
+  for(let k=0;k<6;k++){
+    const h=document.createElement('div');h.className='heart';h.textContent=Math.random()<0.5?'♡':'✦';
+    h.style.left=(r.left+r.width*(0.3+Math.random()*0.4))+'px';
+    h.style.top=(r.top+r.height*0.3)+'px';
+    h.style.color=Math.random()<0.5?'#FFD8E2':'#FFE89C';
+    h.style.fontSize=(10+Math.random()*8)+'px';
+    h.style.animationDelay=(k*0.06)+'s';
+    document.body.appendChild(h);
+    setTimeout(()=>h.remove(),1600);
+  }
+}
+
+/* ---------- 弹窗 ---------- */
+function openModal(){
+  $('wishInput').value='';
+  $('modalMask').classList.add('show');
+  setTimeout(()=>$('wishInput').focus(),450);
+}
+function closeModal(){ $('modalMask').classList.remove('show'); }
+$('btnSkip').onclick=()=>{ closeModal(); };
+$('btnSend').onclick=()=>{
+  const txt=$('wishInput').value.trim();
+  if(txt){
+    state.wishes.push(txt);saveState();updateCounter();
+    // 文字化作光点飘进云朵
+    flySpark(txt);
+  }
+  closeModal();
+};
+$('modalMask').addEventListener('click',e=>{ if(e.target===$('modalMask')) closeModal(); });
+
+function flySpark(txt){
+  const input=$('wishInput').getBoundingClientRect();
+  const cloud=$('wishCloudBody').getBoundingClientRect();
+  const startX=input.left+input.width/2,startY=input.top+input.height/2;
+  const endX=cloud.left+cloud.width/2,endY=cloud.top+cloud.height/2;
+  for(let k=0;k<5;k++){
+    const s=document.createElement('div');s.className='spark';
+    s.style.left=(startX+(Math.random()-.5)*30)+'px';
+    s.style.top=(startY+(Math.random()-.5)*20)+'px';
+    document.body.appendChild(s);
+    const dx=endX-startX+(Math.random()-.5)*40,dy=endY-startY-40;
+    s.animate([
+      {transform:'translate(0,0) scale(1)',opacity:1},
+      {transform:`translate(${dx*0.5}px,${dy*0.5-30}px) scale(1.3)`,opacity:1,offset:0.5},
+      {transform:`translate(${dx}px,${dy}px) scale(.3)`,opacity:0}
+    ],{duration:1400+Math.random()*400,easing:'ease-in',delay:k*90});
+    setTimeout(()=>s.remove(),2000);
+  }
+  toast('心愿已化作光点，飘进云朵收藏 ✨');
+}
+
+/* ---------- 拖拽乌云 ---------- */
+const dragLayer=$('darkClouds');
+let dragging=false,dragStartX=0,layerOffsetX=0;
+function onDragStart(x){
+  dragging=true;dragStartX=x;
+  $('dragHint').classList.remove('show');
+}
+function onDragMove(x){
+  if(!dragging) return;
+  const dx=x-dragStartX;
+  dragLayer.style.transform=`translateX(${dx*0.6}px)`;
+}
+function onDragEnd(x){
+  if(!dragging) return;
+  dragging=false;
+  const dx=x-dragStartX;
+  const dist=Math.abs(dx);
+  // 拨开超过阈值：永久减一点雨 + 弹回
+  if(dist>60){
+    const prev=state.count;
+    state.intensity=Math.max(0,state.intensity-0.05);
+    state.dragged+=1;saveState();
+    renderAtmosphere();updateStatus();updateUmbrella();updateAudio();
+    checkEasterEggs(prev);
+    toast('乌云被你拨开了一片 ☁️');
+  }
+  // 弹簧回弹
+  dragLayer.style.transition='transform .8s cubic-bezier(.34,1.56,.64,1)';
+  dragLayer.style.transform='translateX(0)';
+  setTimeout(()=>dragLayer.style.transition='',800);
+}
+// 鼠标
+dragLayer.addEventListener('mousedown',e=>{e.preventDefault();onDragStart(e.clientX);});
+window.addEventListener('mousemove',e=>onDragMove(e.clientX));
+window.addEventListener('mouseup',e=>onDragEnd(e.clientX));
+// 触摸
+dragLayer.addEventListener('touchstart',e=>{onDragStart(e.touches[0].clientX);},{passive:true});
+window.addEventListener('touchmove',e=>{if(dragging)onDragMove(e.touches[0].clientX);},{passive:true});
+window.addEventListener('touchend',e=>onDragEnd(e.changedTouches[0].clientX));
+
+/* ---------- 启动门：点击进入 + 解锁音频 ---------- */
+$('gate').addEventListener('click',()=>{
+  initAudio();
+  $('gate').classList.add('hide');
+  setTimeout(()=>$('gate').remove(),900);
+  // 3 秒后提示可拖云
+  setTimeout(()=>$('dragHint').classList.add('show'),2600);
+  setTimeout(()=>$('dragHint').classList.remove('show'),9000);
+});
+
+/* ---------- 初始化 ---------- */
+function init(){
+  resize();
+  // 若已雨停（跨会话恢复），直接进祝福
+  if(state.intensity<=0.04 && state.count>0 && !state.blessed){
+    state.blessed=true;saveState();
+  }
+  updateCounter();
+  renderAtmosphere();updateStatus();updateUmbrella();
+  // 已有彩虹？
+  if(state.count>=5){ $('rainbow').style.opacity=1; $('rainbow').style.transform='translateX(-50%) scale(1)'; }
+  // 已雨停？
+  if(state.blessed){ setTimeout(showBlessing,600); }
+  rainLoop();
+}
+window.addEventListener('resize',()=>{ resize(); });
+init();
+</script>
+</body>
+</html>
